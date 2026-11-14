@@ -695,7 +695,6 @@
       m = m || blankMachine();
       if (!Array.isArray(m.trays) || !m.trays.length) m.trays = blankMachine().trays;
       if (!Array.isArray(m.cats)) m.cats = [...DEFAULT_CATS]; else m.cats = m.cats.map(c => c === 'Non-aerated' ? 'Non-Aerated' : c);
-      DEFAULT_CATS.forEach(c => {if (!m.cats.some(x => String(x).toLowerCase() === c.toLowerCase())) m.cats.push(c)});
       if (!Array.isArray(m.prods)) m.prods = []; m.prods.forEach(p => {if (p.cat === 'Non-aerated') p.cat = 'Non-Aerated'; if (p.mrp == null) p.mrp = ''; if (!p.cat) p.cat = 'Uncategorised';});
       if (!m.plan || typeof m.plan !== 'object') m.plan = {};
       m.trays.forEach(t => {const legacy = Number(t.cap) || 10; if (!Array.isArray(t.caps)) t.caps = Array.from({length: t.slots}, () => legacy); else {while (t.caps.length < t.slots) t.caps.push(legacy); t.caps.length = t.slots;} t.caps = t.caps.map(x => Math.max(1, Math.min(99, parseInt(x) || legacy)));});
@@ -816,7 +815,7 @@ ${S.trays.map((r, i) => `<div class="tray-setup"><h3>Tray ${i + 1} <small>(${r.s
 
     function vP() {
       return `<div class="card"><h2>2. Categories</h2><div class="chips">${S.cats.map((c, i) => `<span class="chip" style="background:${COL[i % COL.length]};color:#1c1c1a">${esc(c)} <button type="button" data-a="delcat" data-c="${esc(c)}" title="Delete category" aria-label="Delete ${esc(c)}" style="padding:1px 7px;margin-left:6px;border:0;border-radius:50%;background:rgba(0,0,0,.12);color:#1c1c1a;font-weight:700">×</button></span>`).join('')}</div>
-<div class="row"><label>New category<input id="cname" placeholder="Category name"></label><button data-a="addcat">Add category</button></div></div>
+<div class="row"><label>New category<input id="cname" placeholder="Category name"></label><button data-a="addcat">Add category</button><button class="pri" data-a="savecats">Save categories</button></div></div>
 <div class="card"><h2>3. Add a product</h2><div class="row"><label>Product name<input id="pname" placeholder="Product name"></label><label>MRP (₹)<input id="pmrp" type="number" min="0" step="0.01" placeholder="0.00"></label>
 <label>Category<select id="pcat">${S.cats.map(c => `<option>${esc(c)}</option>`).join('')}</select></label><label>Photo<input type="file" accept="image/*" data-a="newimg"></label><img id="pprev" alt="" width="48" height="48" style="display:none"><button class="pri" data-a="addprod">Add product</button></div></div>
 <div class="card"><h2>Bulk Import</h2><p class="mu">Import multiple products using Excel (.xlsx), CSV or TSV. Required: Product Name. Optional: MRP, Category, Image/Image Reference.</p>
@@ -863,6 +862,7 @@ ${ids.length && S.tot !== false ? `<table class="tot"><thead><tr><th colspan="3"
         const next = machines[0]; activeMachineId = next.id; activeRecord = next; S = normalizeMachine(next.data); ed = null; persistLibrary(); render();
       }
       else if (a == 'addcat') {const n = $('#cname').value.trim(); if (n && !S.cats.some(c => norm(c) === norm(n))) {S.cats.push(n); save(); render()} }
+      else if (a == 'savecats') {save(); alert('Product categories saved in this browser.')}
       else if (a == 'renamecat') {const old = d.c, n = prompt('Rename category:', old); if (n && n.trim() && n.trim() !== old) {const next = n.trim(); if (S.cats.some(c => norm(c) === norm(next) && c !== old)) {alert('That category already exists.'); return } S.cats = S.cats.map(c => c === old ? next : c); S.prods.forEach(p => {if (p.cat === old) p.cat = next}); save(); render()} }
       else if (a == 'bulkassign') {const ids = [...document.querySelectorAll('.prod-select:checked')].map(x => x.value), cat = $('#bulkcat').value; if (!ids.length) {alert('Select at least one product.'); return } S.prods.forEach(p => {if (ids.includes(p.id)) p.cat = cat}); save(); render()}
       else if (a == 'selectall') {document.querySelectorAll('.prod-select').forEach(x => x.checked = el.checked)}
