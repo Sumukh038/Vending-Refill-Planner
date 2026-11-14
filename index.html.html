@@ -1,0 +1,216 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Vending Refill Planner</title><style>
+:root{--bg:#f4f4f0;--card:#fff;--tx:#1c1c1a;--mu:#6b6b66;--bd:#d8d8d0;--ac:#d9480f;--on:#fff;color-scheme:light dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#161615;--card:#222220;--tx:#eeeee8;--mu:#a0a09a;--bd:#3a3a36;--ac:#ff7a3d;--on:#161615}}
+:root[data-theme="dark"]{--bg:#161615;--card:#222220;--tx:#eeeee8;--mu:#a0a09a;--bd:#3a3a36;--ac:#ff7a3d;--on:#161615}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:12px}
+h1{font-size:20px;margin:14px 12px 4px}h2{font-size:17px;margin:0 0 10px}h3{margin:0 0 8px}small,.mu{color:var(--mu);font-weight:400}
+nav{display:flex;gap:6px;padding:8px 12px;flex-wrap:wrap}
+button{font:inherit;border:1px solid var(--bd);background:var(--card);color:var(--tx);padding:7px 12px;border-radius:8px;cursor:pointer}
+button.on,button.pri{background:var(--ac);color:var(--on);border-color:var(--ac)}button.sec{background:transparent}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:12px}
+label{display:block;margin:8px 0;font-weight:600;font-size:13px}
+input,select{display:block;font:inherit;width:100%;max-width:340px;padding:7px 9px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);margin-top:3px}
+table{border-collapse:collapse}td,th{padding:4px 12px 4px 0;text-align:left;font-size:13px}td input{width:90px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-top:10px}.row label{margin:0}
+.tray-setup{border:1px solid var(--bd);border-radius:10px;padding:12px;margin:12px 0}.tray-setup h3{margin:0 0 8px}.slot-cap-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}.slot-cap-list label{margin:0;font-weight:500}.slot-cap-list input{max-width:none;width:100%}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.chip{padding:4px 10px;border-radius:99px;font-size:13px}
+.chip i{font-style:normal;margin-left:6px;opacity:.6;cursor:pointer}
+.pg{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin:8px 0}
+.pc{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px;font-size:12px;text-align:center}.pc.sel{outline:3px solid var(--ac)}
+.pc img,.pc .ph{width:64px;height:64px}
+img{object-fit:contain;border-radius:6px;background:#fff}.ph{display:flex;align-items:center;justify-content:center;background:#e5e5de;color:#555;font-size:22px;font-weight:700;border-radius:6px}
+.prod{display:flex;flex-direction:column;align-items:center;gap:4px;border:1px solid var(--bd);border-radius:10px;padding:8px;font-size:12px;text-align:center}
+.prod img,.prod .ph{width:72px;height:72px}.prod label{font-weight:400;margin:0}
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:12px;z-index:20}
+.dlg{background:var(--card);border-radius:14px;padding:16px;width:100%;max-width:560px;max-height:90vh;overflow:auto}
+.sheet{background:#fff;color:#111;padding:12px;border-radius:10px}
+.mid{display:contents}.pn{order:2}.q{order:3}.hd{display:flex;align-items:center;gap:12px;margin-bottom:6px}.logo{height:44px;width:auto}.sheet h2{margin:0}.sheet .mu{color:#555}
+.tray{overflow-x:auto;margin:8px 0 12px}.tray b{display:block;font-size:13px;margin-bottom:3px}
+.grid{display:grid;gap:4px}
+.slot{border:1.5px solid #888;border-radius:6px;padding:4px;text-align:center;cursor:pointer;min-height:140px;display:flex;flex-direction:column;align-items:center;gap:2px;color:#1c1c1a;background:#fff}
+.sn{font-weight:800;font-size:13px;background:#111;color:#fff;border-radius:4px;padding:0 8px;align-self:stretch}
+.slot img,.slot .ph{width:56px;height:56px}
+.pn{font-size:11px;line-height:1.15;font-weight:600;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.q{font-size:22px;font-weight:800;line-height:1}.q small{font-size:10px;color:#444}.empty{color:#999;font-size:12px;margin-top:30px}
+.tot{width:100%;table-layout:fixed;border-collapse:collapse}
+.tot th{font-size:10px;padding:2px 4px;text-align:left}
+.tot td{border-top:1px solid #ccc;font-size:9px;line-height:1.05;color:#111;padding:1px 4px;vertical-align:middle}
+.tot img,.tot .ph{width:17px;height:17px;font-size:9px}
+.tot .tot-name{overflow-wrap:anywhere}
+@media print{.tot{break-before:page;page-break-before:always}.tot thead{display:table-header-group}.tot tr{break-inside:avoid;page-break-inside:avoid}.tot th{font-size:8pt;padding:1mm 1.2mm}.tot td{font-size:7.5pt;line-height:1;padding:.55mm 1.2mm}.tot img,.tot .ph{width:5mm;height:5mm;font-size:6pt}}
+@media print{nav,.noprint,h1{display:none!important}body,main{background:#fff;padding:0;max-width:none}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}.sheet{padding:0;border-radius:0}.hd{margin-bottom:2mm;gap:3mm;height:var(--hh)}.logo{height:var(--hh)}.sheet h2{font-size:calc(var(--hh)*.42)}.hd .mu{font-size:calc(var(--hh)*.26)}.tray{overflow:visible;display:flex;gap:1mm;margin:0 0 1mm}.tray b{margin:0;width:var(--lw);flex:none;background:#111;color:#fff;display:flex;align-items:center;justify-content:center;text-align:center;font-size:var(--fs);border-radius:1mm}.grid{grid-template-columns:repeat(var(--n),var(--cw))!important;gap:1mm;justify-content:start}.slot{height:var(--ch);min-height:0;padding:.5mm;gap:.3mm;overflow:hidden;border-width:.3mm;justify-content:space-between}.sn{font-size:calc(var(--fs)*1.1);line-height:1.3;padding:0}.mid{display:flex;align-items:center;justify-content:center;gap:1mm;flex:1;min-height:0}.slot img,.slot .ph{width:var(--im);height:var(--im);flex:none}.pn{font-size:var(--fs);line-height:1.1}.q{font-size:var(--qf)}.q small{font-size:var(--fs)}.empty{margin:auto}.tot{break-before:page}}
+.machine-library{border:1px solid var(--bd);border-radius:10px;padding:10px;margin:8px 0 14px}.machine-library .row{margin-top:6px}.machine-library select{max-width:420px}.machine-library p{margin:7px 0 0}
+</style></head><body>
+<h1><img id="hl" alt="Hungry Picnic" height="34" style="vertical-align:middle;background:#fff;border-radius:6px;margin-right:8px">Vending refill planner</h1><nav id="nav"></nav><main id="main"></main><div id="modal"></div>
+<script>
+const $=s=>document.querySelector(s);const LOGO="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/4QKyRXhpZgAATU0AKgAAAAgAAodpAAQAAAABAAABMuocAAcAAAEMAAAAJgAAAAAc6gAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWQAwACAAAAFAAAAoCQBAACAAAAFAAAApSSkQACAAAAAzAwAACSkgACAAAAAzAwAADqHAAHAAABDAAAAXQAAAAAHOoAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADIwMjY6MDg6MTkgMDM6NTY6MTQAMjAyNjowODoxOSAwMzo1NjoxNAAAAP/hAqxodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvADw/eHBhY2tldCBiZWdpbj0n77u/JyBpZD0nVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkJz8+DQo8eDp4bXBtZXRhIHhtbG5zOng9ImFkb2JlOm5zOm1ldGEvIj48cmRmOlJERiB4bWxuczpyZGY9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkvMDIvMjItcmRmLXN5bnRheC1ucyMiPjxyZGY6RGVzY3JpcHRpb24gcmRmOmFib3V0PSJ1dWlkOmZhZjViZGQ1LWJhM2QtMTFkYS1hZDMxLWQzM2Q3NTE4MmYxYiIgeG1sbnM6ZXhpZj0iaHR0cDovL25zLmFkb2JlLmNvbS9leGlmLzEuMC8iPjxleGlmOkRhdGVUaW1lT3JpZ2luYWw+MjAyNi0wOC0xOVQwMzo1NjoxNDwvZXhpZjpEYXRlVGltZU9yaWdpbmFsPjwvcmRmOkRlc2NyaXB0aW9uPjwvcmRmOlJERj48L3g6eG1wbWV0YT4NCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA8P3hwYWNrZXQgZW5kPSd3Jz8+/9sAQwADAgIDAgIDAwMDBAMDBAUIBQUEBAUKBwcGCAwKDAwLCgsLDQ4SEA0OEQ4LCxAWEBETFBUVFQwPFxgWFBgSFBUU/9sAQwEDBAQFBAUJBQUJFA0LDRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU/8AAEQgATQDIAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYH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";
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const COL=['#fde68a','#fecaca','#bfdbfe','#bbf7d0','#e9d5ff','#fed7aa','#fbcfe8','#a7f3d0','#c7d2fe','#fef08a'];
+const DEFAULT_CATS=['Chips','Chocolates','Cans','Aerated','Non-aerated','Healthy snack','Savory snack','Popcorn','Healthy bars','Biscuits'];
+const blankMachine=(name='Machine 1')=>({name,trays:Array.from({length:6},()=>({slots:8,cap:10,caps:Array(8).fill(10)})),cats:[...DEFAULT_CATS],prods:[],plan:{}});
+const normalizeMachine=m=>{
+  m=m||blankMachine();
+  if(!Array.isArray(m.trays)||!m.trays.length)m.trays=blankMachine().trays;
+  if(!Array.isArray(m.cats))m.cats=[...DEFAULT_CATS];
+  if(!Array.isArray(m.prods))m.prods=[];
+  if(!m.plan||typeof m.plan!=='object')m.plan={};
+  m.trays.forEach(t=>{const legacy=Number(t.cap)||10;if(!Array.isArray(t.caps))t.caps=Array.from({length:t.slots},()=>legacy);else{while(t.caps.length<t.slots)t.caps.push(legacy);t.caps.length=t.slots;}t.caps=t.caps.map(x=>Math.max(1,Math.min(99,parseInt(x)||legacy)));});
+  return m;
+};
+let machines=[],activeMachineId='',S=null;
+try{machines=JSON.parse(localStorage.getItem('vrp_machines')||'[]')||[]}catch(e){machines=[]}
+try{activeMachineId=localStorage.getItem('vrp_active_machine')||''}catch(e){}
+if(!machines.length){
+  let legacy=null;try{legacy=JSON.parse(localStorage.getItem('vrp')||'null')}catch(e){}
+  const initial=normalizeMachine(legacy||blankMachine());
+  activeMachineId='machine-'+Date.now().toString(36);
+  machines=[{id:activeMachineId,name:initial.name||'Machine 1',data:initial}];
+}
+let activeRecord=machines.find(m=>m.id===activeMachineId)||machines[0];
+if(!activeRecord){activeRecord={id:'machine-'+Date.now().toString(36),name:'Machine 1',data:blankMachine()};machines=[activeRecord]}
+activeMachineId=activeRecord.id;S=normalizeMachine(activeRecord.data);activeRecord.data=S;activeRecord.name=S.name||activeRecord.name||'Machine 1';
+let v=0,ed=null,pend=null,warned=false;
+const persistLibrary=()=>{
+  try{
+    activeRecord=machines.find(m=>m.id===activeMachineId)||activeRecord;
+    if(activeRecord){activeRecord.data=S;activeRecord.name=S.name||activeRecord.name}
+    localStorage.setItem('vrp_machines',JSON.stringify(machines));
+    localStorage.setItem('vrp_active_machine',activeMachineId);
+    localStorage.setItem('vrp',JSON.stringify(S));
+  }catch(e){if(!warned){warned=true;alert('Browser storage is full or unavailable. Some changes may not be saved. Consider reducing the number or size of product photos.')}} 
+};
+const save=()=>persistLibrary();
+const activateMachine=id=>{
+  persistLibrary();
+  const rec=machines.find(m=>m.id===id);if(!rec)return;
+  activeMachineId=id;activeRecord=rec;S=normalizeMachine(rec.data);rec.data=S;rec.name=S.name||rec.name;
+  ed=null;pend=null;persistLibrary();render();
+};
+const createMachine=()=>{
+  persistLibrary();
+  const copy=JSON.parse(JSON.stringify(S));
+  copy.name='New machine';copy.plan={};copy.paper=S.paper;copy.tot=S.tot;
+  const id='machine-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,6);
+  const rec={id,name:copy.name,data:normalizeMachine(copy)};
+  machines.push(rec);activeMachineId=id;activeRecord=rec;S=rec.data;ed=null;v=0;persistLibrary();render();
+};
+const num=(x,a,b)=>Math.max(a,Math.min(b,parseInt(x)||a));
+const capAt=(t,s)=>num(S.trays[t].caps?.[s]??S.trays[t].cap??10,1,99);
+// Physical slot numbers from the Hungry Alaskan Plus spiral configuration.
+// Internal tray/slot indexes remain zero-based so existing saved plans are preserved.
+const SLOT_LABELS=[
+  [1,3,5,7,9],
+  [11,13,15,17,19],
+  [21,23,25,26,27,28,29,30],
+  [31,32,33,34,35,36,37,38,39,40],
+  [41,42,43,44,45,46,47,48,49,50],
+  [51,52,53,54,55,56,57,58,59,60]
+];
+const slotNo=(t,s)=>{
+  const labels=SLOT_LABELS[t];
+  if(labels && labels[s]!==undefined) return labels[s];
+  if(labels && s>=labels.length) return labels[labels.length-1]+(s-labels.length+1);
+  return S.trays.slice(0,t).reduce((n,tr)=>n+tr.slots,1)+s;
+};
+const img=p=>p.img?`<img src="${p.img}" alt="">`:`<div class="ph">${esc((p.name[0]||'?').toUpperCase())}</div>`;
+function readImg(f,cb){const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{const k=Math.min(1,240/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=im.width*k;c.height=im.height*k;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(im,0,0,c.width,c.height);cb(c.toDataURL('image/jpeg',.8))};im.src=r.result};r.readAsDataURL(f)}
+const colOf=p=>COL[Math.max(0,S.cats.indexOf(p.cat))%COL.length];
+
+const P={'4 x 6 in portrait (shipping label)':[95.6,146.4,3],'4 x 6 in landscape (shipping label)':[146.4,95.6,3],'A4 landscape':[281,194,8],'A4 portrait':[194,281,8],'A5 landscape (half sheet)':[198,136,6],'A5 portrait (half sheet)':[136,198,6],'A6 landscape (quarter sheet)':[140,97,4],'A6 portrait (quarter sheet)':[97,140,4],'A7 landscape (eighth sheet)':[99,68,3],'A7 portrait (eighth sheet)':[68,99,3]};
+const PAGE_SIZE={'4 x 6 in portrait (shipping label)':'4in 6in','4 x 6 in landscape (shipping label)':'6in 4in'};
+const paper=()=>P[S.paper]?S.paper:'A4 landscape';
+const cl=(a,b,x)=>Math.max(a,Math.min(b,x));
+function fit(){const [W,H]=P[paper()],n=S.trays.length,m=Math.max(...S.trays.map(t=>t.slots)),hh=cl(6,11,H*.1),lw=cl(5,8,W*.045),cw=(W-lw-1-(m-1))/m,ch=cl(8,40,(H-hh-4-n)/n),fs=cl(5.5,9,cw*.3),qf=cl(9,22,cw*.45),im=cl(5,30,Math.min(ch-1.31*fs-1.5,cw-.45*qf-1.5)),r=x=>x.toFixed(1);
+let msg=im<10?`Heads up: on ${paper()}, photos print only about ${Math.round(im)} mm wide. Use a bigger paper size or fewer trays/slots.`:`Fits on one ${paper()} page; photos print about ${Math.round(im)} mm wide.`;
+if(n*(ch+1)+hh+4>H+.5)msg='Too many trays to fit on one page of '+paper()+'. Use a bigger paper size.';
+return {css:`--hh:${r(hh)}mm;--lw:${r(lw)}mm;--cw:${r(cw)}mm;--ch:${r(ch)}mm;--im:${r(im)}mm;--fs:${r(fs)}pt;--qf:${r(qf)}pt`,msg}}
+function pageStyle(){let s=$('#pg');if(!s){s=document.createElement('style');s.id='pg';document.head.appendChild(s)}const k=paper(),size=PAGE_SIZE[k]||k.split(' (')[0];s.textContent=`@page{size:${size};margin:${P[k][2]}mm}`}
+const norm=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+const title=s=>s.toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());
+const shrink=src=>new Promise(res=>{const im=new Image();im.onload=()=>{const k=Math.min(1,240/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=im.width*k;c.height=im.height*k;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(im,0,0,c.width,c.height);res(c.toDataURL('image/jpeg',.8))};im.onerror=()=>res(null);im.src=src});
+function parseTable(t){const d=t.split('\n',1)[0].includes('\t')?'\t':',',rows=[];let r=[],c='',q=false;for(let i=0;i<t.length;i++){const ch=t[i];if(q){if(ch=='"'){if(t[i+1]=='"'){c+='"';i++}else q=false}else c+=ch}else if(ch=='"')q=true;else if(ch==d){r.push(c);c=''}else if(ch=='\n'||ch=='\r'){if(ch=='\r'&&t[i+1]=='\n')i++;r.push(c);c='';rows.push(r);r=[]}else c+=ch}if(c||r.length){r.push(c);rows.push(r)}return rows.filter(r=>r.some(x=>x.trim()))}
+function rowsToItems(rows){const h=rows[0].map(x=>x.trim().toLowerCase()),f=k=>h.findIndex(x=>x.includes(k));
+const n=[f('sku'),f('product'),f('name')].find(i=>i>=0),c=[f('categ'),f('type')].find(i=>i>=0),q=[f('qty'),f('quant'),f('units'),f('par'),f('capac')].find(i=>i>=0);
+if(n===undefined)throw new Error('no SKU or name column found in the header row');
+return rows.slice(1).map(r=>({name:(r[n]||'').trim(),cat:c!==undefined?(r[c]||'').trim():'',def:q!==undefined?parseInt(r[q])||0:0})).filter(x=>x.name)}
+async function applyItems(items){let nw=0,up=0;for(const it of items){const cn=it.cat||'Uncategorised';let cat=S.cats.find(c=>norm(c)==norm(cn));if(!cat){cat=title(cn);S.cats.push(cat)}
+let p=S.prods.find(x=>norm(x.name)==norm(it.name));if(p)up++;else{p={id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),name:String(it.name),cat,img:null};S.prods.push(p);nw++}
+p.cat=cat;if(it.def)p.def=+it.def;if(it.img){const d=await shrink(it.img);if(d)p.img=d}}
+save();const np=S.prods.filter(p=>!p.img).length;return `Imported ${nw} new and updated ${up} products. ${np} still have no photo.`}
+async function matchImgs(files){let n=0;for(const f of files){const k=norm(f.name.replace(/\.[^.]+$/,''));const p=S.prods.find(x=>norm(x.name)==k)||S.prods.find(x=>k&&(norm(x.name).includes(k)||k.includes(norm(x.name))));if(p){const d=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(f)}).then(shrink);if(d){p.img=d;n++}}}save();return `${n} of ${files.length} photos matched a product by file name.`}
+const done=m=>{render();const e=$('#imsg');if(e)e.textContent=m};
+const run=p=>p.then(done).catch(e=>done('Import failed: '+e.message));
+function vM(){const tot=S.trays.reduce((a,t)=>a+t.slots,0);return `<div class="card"><h2>1. Machine setup</h2>
+<div class="machine-library"><label>Saved machine templates<select data-a="machine-select">${machines.map(m=>`<option value="${esc(m.id)}"${m.id===activeMachineId?' selected':''}>${esc(m.name||'Unnamed machine')}</option>`).join('')}</select></label><div class="row"><button class="pri" data-a="newmachine">Save as new machine</button><button data-a="savemachine">Save current machine</button><button class="sec" data-a="deletemachine"${machines.length<=1?' disabled':''}>Delete machine</button></div><p class="mu">Changes are saved automatically to this machine in this browser. Select a saved machine to return to it later.</p></div>
+<label>Machine name<input data-a="name" value="${esc(S.name)}"></label>
+<label>Number of trays<input type="number" min="1" max="20" value="${S.trays.length}" data-a="ntrays"></label>
+${S.trays.map((r,i)=>`<div class="tray-setup"><h3>Tray ${i+1} <small>(${r.slots} slots)</small></h3><label>Number of slots<input type="number" min="1" max="20" value="${r.slots}" data-a="slots" data-t="${i}"></label><div class="slot-cap-list">${Array.from({length:r.slots},(_,j)=>`<label>Slot ${slotNo(i,j)} capacity<input type="number" min="1" max="99" value="${capAt(i,j)}" data-a="slotcap" data-t="${i}" data-s="${j}"></label>`).join('')}</div></div>`).join('')}
+<p class="mu">Total slots: ${tot}. Set the capacity separately for every slot. Slot numbers follow the machine's physical spiral configuration.</p></div>`}
+
+function vP(){return `<div class="card"><h2>2. Categories</h2><div class="chips">${S.cats.map((c,i)=>`<span class="chip" style="background:${COL[i%COL.length]};color:#1c1c1a">${esc(c)}<i data-a="delcat" data-c="${esc(c)}" title="Remove">×</i></span>`).join('')}</div>
+<div class="row"><label>New category<input id="cname" placeholder="e.g. Energy drinks"></label><button data-a="addcat">Add category</button></div></div>
+<div class="card"><h2>3. Add a product</h2><div class="row"><label>Product name<input id="pname" placeholder="e.g. Parle Hide &amp; Seek"></label>
+<label>Category<select id="pcat">${S.cats.map(c=>`<option>${esc(c)}</option>`).join('')}</select></label>
+<label>Photo<input type="file" accept="image/*" data-a="newimg"></label><img id="pprev" alt="" width="48" height="48" style="display:none"><button class="pri" data-a="addprod">Add product</button></div></div>
+<div class="card"><h2>Bulk import</h2><p class="mu">Fastest way to load many products: first the product list, then the photos.</p><label>1a. Product file from the Apps Script (.json), or a CSV/TSV with a header row<input type="file" accept=".json,.csv,.tsv,.txt" data-a="impfile"></label><label>1b. Or paste rows copied from Google Sheets (include the header row)<textarea id="paste" rows="4" style="width:100%;max-width:560px;display:block;font:inherit;background:var(--bg);color:var(--tx);border:1px solid var(--bd);border-radius:8px"></textarea></label><button data-a="imppaste">Import pasted rows</button><label>2. Photos named like the product (select many at once)<input type="file" accept="image/*" multiple data-a="impimgs"></label><p id="imsg" class="mu"></p></div>
+<div class="card"><h2>Products (${S.prods.length}${S.prods.some(p=>!p.img)?`, ${S.prods.filter(p=>!p.img).length} without photo`:''})</h2>${S.cats.map(c=>{const l=S.prods.filter(p=>p.cat==c);return l.length?`<h3>${esc(c)}</h3><div class="pg">${l.map(p=>`<div class="prod">${img(p)}<b>${esc(p.name)}</b>${p.def?`<small>default ${p.def} units</small>`:''}<label class="sec"><button type="button" onclick="this.nextElementSibling.click()">Change photo</button><input type="file" accept="image/*" hidden data-a="chimg" data-id="${p.id}"></label><button class="sec" data-a="delprod" data-id="${p.id}">Delete</button></div>`).join('')}</div>`:''}).join('')||''}${S.prods.length?'':'<p class="mu">No products yet. Add your first one above.</p>'}</div>`}
+
+function cell(t,s){const e=S.plan[t+'-'+s],p=e&&S.prods.find(x=>x.id==e.pid),cap=capAt(t,s);
+return `<div class="slot" data-a="edit" data-t="${t}" data-s="${s}"${p?` style="background:#fff"`:''}><div class="sn">Slot ${slotNo(t,s)}</div>${p?`<div class="mid">${img(p)}<div class="q">${Math.min(e.qty,cap)}</div></div><div class="pn">${esc(p.name)}</div>`:'<div class="empty">empty</div>'}</div>`}
+
+function vR(){const tot={};S.trays.forEach((r,t)=>{for(let s=0;s<r.slots;s++){const e=S.plan[t+'-'+s];if(e&&e.qty>0&&S.prods.some(p=>p.id==e.pid))tot[e.pid]=(tot[e.pid]||0)+Math.min(e.qty,capAt(t,s))}});
+const ids=Object.keys(tot),sum=ids.reduce((a,k)=>a+tot[k],0);
+const f=fit();return `<div class="card noprint"><h2>4. Plan &amp; print</h2><p class="mu">Tap any slot to choose its product and quantity. Then print and place the sheet on the tote lid.</p><div class="row"><label>Paper &amp; orientation<select data-a="paper">${Object.keys(P).map(k=>`<option${paper()==k?' selected':''}>${k}</option>`).join('')}</select></label><label style="font-weight:400"><input type="checkbox" data-a="totals"${S.tot!==false?' checked':''} style="display:inline;width:auto"> Pick-list totals on a 2nd page</label></div><p class="mu">${f.msg}</p><button class="pri" data-a="print">Print colour sheet</button> <span class="hint mu">To download: choose “Save as PDF” in the print window. The PDF keeps the exact paper size. If nothing opens, open this page in its own browser tab and try again.</span></div>
+<div class="sheet" style="${f.css}"><div class="hd"><img class="logo" src="${LOGO}" alt="Hungry Picnic"><div><h2>${esc(S.name)} — refill sheet</h2><div class="mu">${new Date().toLocaleDateString()} · ${sum} units to pack</div></div></div>
+${S.trays.map((r,t)=>`<div class="tray"><b>Tray ${t+1}</b><div class="grid" style="--n:${r.slots};grid-template-columns:repeat(${r.slots},minmax(96px,1fr))">${Array.from({length:r.slots},(_,s)=>cell(t,s)).join('')}</div></div>`).join('')}
+${ids.length&&S.tot!==false?`<table class="tot"><thead><tr><th colspan="3">Pick list (all trays)</th><th colspan="3">Pick list (all trays)</th></tr></thead><tbody>${Array.from({length:Math.ceil(ids.length/2)},(_,i)=>{const a=ids[i*2],b=ids[i*2+1];const item=k=>{if(!k)return '<td></td><td></td><td></td>';const p=S.prods.find(x=>x.id==k);return `<td>${img(p)}</td><td class="tot-name">${esc(p.name)}</td><td><b>${tot[k]}</b></td>`};return `<tr>${item(a)}${item(b)}</tr>`}).join('')}</tbody></table>`:''}</div>`}
+
+function modal(){const m=$('#modal');if(!ed){m.innerHTML='';return}const cap=capAt(ed.t,ed.s),list=S.prods.filter(p=>ed.cat=='All'||p.cat==ed.cat);
+m.innerHTML=`<div class="ov"><div class="dlg"><h3>Tray ${ed.t+1} · Slot ${slotNo(ed.t,ed.s)} <small>capacity ${cap}</small></h3>
+<div class="chips">${['All',...S.cats].map(c=>`<button class="chip ${ed.cat==c?'on':''}" data-a="chip" data-c="${esc(c)}">${esc(c)}</button>`).join('')}</div>
+<div class="pg">${list.map(p=>`<button class="pc ${ed.pid==p.id?'sel':''}" data-a="pick" data-id="${p.id}">${img(p)}<span>${esc(p.name)}</span></button>`).join('')||'<p class="mu">No products here yet. Add some in step 2.</p>'}</div>
+<label>Units to pack in this slot (max ${cap})<input type="number" id="qty" min="0" max="${cap}" value="${ed.qty}"></label>
+<div class="row"><button class="pri" data-a="save">Save slot</button><button class="sec" data-a="tray">Apply to whole tray</button><button class="sec" data-a="clear">Clear</button><button class="sec" data-a="close">Cancel</button></div></div></div>`}
+
+function render(){$('#nav').innerHTML=['Machine','Products','Plan & print'].map((n,i)=>`<button class="${v==i?'on':''}" data-a="tab" data-v="${i}">${i+1}. ${n}</button>`).join('');$('#main').innerHTML=[vM,vP,vR][v]();modal();pageStyle()}
+
+document.addEventListener('click',e=>{const el=e.target.closest('[data-a]');if(!el||el.tagName=='INPUT'||el.tagName=='SELECT')return;const a=el.dataset.a,d=el.dataset;
+if(a=='tab'){v=+d.v;render()}
+else if(a=='newmachine'){createMachine()}
+else if(a=='savemachine'){persistLibrary();alert('Machine template saved in this browser.');render()}
+else if(a=='deletemachine'){
+  if(machines.length<=1){alert('At least one machine template must remain.');return}
+  if(!confirm('Delete the saved template for '+(S.name||'this machine')+'? This cannot be undone.'))return;
+  machines=machines.filter(m=>m.id!==activeMachineId);
+  const next=machines[0];activeMachineId=next.id;activeRecord=next;S=normalizeMachine(next.data);ed=null;persistLibrary();render();
+}
+else if(a=='addcat'){const n=$('#cname').value.trim();if(n&&!S.cats.includes(n)){S.cats.push(n);save();render()}}
+else if(a=='delcat'){if(S.prods.some(p=>p.cat==d.c)){alert('Remove or move the products in this category first.');return}S.cats=S.cats.filter(c=>c!=d.c);save();render()}
+else if(a=='addprod'){const n=$('#pname').value.trim();if(!n){alert('Enter a product name.');return}S.prods.push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,5),name:n,cat:$('#pcat').value,img:pend});pend=null;save();render()}
+else if(a=='delprod'){S.prods=S.prods.filter(p=>p.id!=d.id);for(const k in S.plan)if(S.plan[k].pid==d.id)delete S.plan[k];save();render()}
+else if(a=='edit'){const t=+d.t,s=+d.s,x=S.plan[t+'-'+s];ed={t,s,cat:'All',pid:x?x.pid:null,qty:x?Math.min(x.qty,capAt(t,s)):capAt(t,s)};modal()}
+else if(a=='chip'){ed.cat=d.c;modal()}
+else if(a=='pick'){ed.pid=d.id;const pp=S.prods.find(x=>x.id==d.id);if(pp&&pp.def)ed.qty=Math.min(pp.def,capAt(ed.t,ed.s));modal()}
+else if(a=='imppaste'){const t=$('#paste').value;if(!t.trim())return;$('#imsg').textContent='Importing…';run(Promise.resolve().then(()=>applyItems(rowsToItems(parseTable(t)))))}
+else if(a=='close'){ed=null;modal()}
+else if(a=='clear'){delete S.plan[ed.t+'-'+ed.s];ed=null;save();render()}
+else if(a=='save'||a=='tray'){if(!ed.pid){alert('Pick a product first.');return}const q=num($('#qty').value,0,capAt(ed.t,ed.s));
+if(a=='save')S.plan[ed.t+'-'+ed.s]={pid:ed.pid,qty:q};else for(let s=0;s<S.trays[ed.t].slots;s++)S.plan[ed.t+'-'+s]={pid:ed.pid,qty:Math.min(q,capAt(ed.t,s))};ed=null;save();render()}
+else if(a=='print'){try{window.print()}catch(x){alert('Printing is not available here. Open the page in its own tab.')}}});
+document.addEventListener('input',e=>{if(e.target.id=='qty'&&ed)ed.qty=+e.target.value||0});
+document.addEventListener('change',e=>{const el=e.target,a=el.dataset.a,t=+el.dataset.t;if(!a)return;
+if(a=='machine-select'){if(el.value!==activeMachineId)activateMachine(el.value)}
+else if(a=='name'){S.name=el.value;save();const opt=$('[data-a="machine-select"] option:checked');if(opt)opt.textContent=el.value||'Unnamed machine'}
+else if(a=='paper'){S.paper=el.value;save();render()}
+else if(a=='impfile'&&el.files[0]){const f=el.files[0];$('#imsg').textContent='Importing…';run(f.text().then(t=>/\.json$/i.test(f.name)?applyItems(JSON.parse(t)):applyItems(rowsToItems(parseTable(t)))))}
+else if(a=='impimgs'&&el.files.length){$('#imsg').textContent='Matching photos…';run(matchImgs([...el.files]))}
+else if(a=='totals'){S.tot=el.checked;save();render()}
+else if(a=='ntrays'){const n=num(el.value,1,20),last=S.trays[S.trays.length-1];while(S.trays.length<n)S.trays.push({...last,caps:[...last.caps]});S.trays.length=n;save();render()}
+else if(a=='slots'){const tr=S.trays[t],n=num(el.value,1,20),fallback=tr.caps?.[tr.caps.length-1]||tr.cap||10;while(tr.caps.length<n)tr.caps.push(fallback);tr.caps.length=n;tr.slots=n;save();render()}
+else if(a=='slotcap'){S.trays[t].caps[+el.dataset.s]=num(el.value,1,99);save()}
+else if(a=='newimg'&&el.files[0])readImg(el.files[0],d=>{pend=d;const p=$('#pprev');p.src=d;p.style.display='block'});
+else if(a=='chimg'&&el.files[0]){const id=el.dataset.id;readImg(el.files[0],d=>{S.prods.find(p=>p.id==id).img=d;save();render()})}});
+$('#hl').src=LOGO;render();
+</script></body></html>
