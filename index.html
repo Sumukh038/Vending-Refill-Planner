@@ -700,27 +700,105 @@
       m.trays.forEach(t => {const legacy = Number(t.cap) || 10; if (!Array.isArray(t.caps)) t.caps = Array.from({length: t.slots}, () => legacy); else {while (t.caps.length < t.slots) t.caps.push(legacy); t.caps.length = t.slots;} t.caps = t.caps.map(x => Math.max(1, Math.min(99, parseInt(x) || legacy)));});
       return m;
     };
-    let machines = [], activeMachineId = '', S = null;
-    try {machines = JSON.parse(localStorage.getItem('vrp_machines') || '[]') || []} catch (e) {machines = []}
-    try {activeMachineId = localStorage.getItem('vrp_active_machine') || ''} catch (e) { }
-    if (!machines.length) {
-      let legacy = null; try {legacy = JSON.parse(localStorage.getItem('vrp') || 'null')} catch (e) { }
-      const initial = normalizeMachine(legacy || blankMachine());
-      activeMachineId = 'machine-' + Date.now().toString(36);
-      machines = [{id: activeMachineId, name: initial.name || 'Machine 1', data: initial}];
-    }
-    let activeRecord = machines.find(m => m.id === activeMachineId) || machines[0];
-    if (!activeRecord) {activeRecord = {id: 'machine-' + Date.now().toString(36), name: 'Machine 1', data: blankMachine()}; machines = [activeRecord]}
-    activeMachineId = activeRecord.id; S = normalizeMachine(activeRecord.data); activeRecord.data = S; activeRecord.name = S.name || activeRecord.name || 'Machine 1';
+    // IndexedDB stores the complete machine library and product photos.
+    // Existing localStorage data is imported once on first launch after this update.
+    let machines = [], activeMachineId = '', S = null, activeRecord = null;
     let v = 0, ed = null, pend = null, warned = false;
-    const persistLibrary = () => {
+    const DB_NAME = 'VendingRefillPlannerDB', DB_VERSION = 1, DB_STORE = 'appData';
+    let db = null, writeQueue = Promise.resolve();
+
+    function openPlannerDB() {
+      return new Promise((resolve, reject) => {
+        if (!('indexedDB' in window)) { reject(new Error('IndexedDB is not supported by this browser.')); return; }
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onupgradeneeded = () => {
+          const database = request.result;
+          if (!database.objectStoreNames.contains(DB_STORE)) database.createObjectStore(DB_STORE);
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error || new Error('Could not open IndexedDB.'));
+        request.onblocked = () => reject(new Error('Database upgrade is blocked by another open tab. Close other planner tabs and reload.'));
+      });
+    }
+    function dbGet(key) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, 'readonly'), req = tx.objectStore(DB_STORE).get(key);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+    function dbSaveLibrary() {
+      // Queue writes so rapid edits cannot overwrite a newer machine-library snapshot.
+      const snapshot = {
+        machines: machines.map(m => ({id: m.id, name: m.name, data: m.data})),
+        activeMachineId,
+        activeMachine: S
+      };
+      writeQueue = writeQueue.then(() => new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, 'readwrite'), store = tx.objectStore(DB_STORE);
+        store.put(snapshot.machines, 'vrp_machines');
+        store.put(snapshot.activeMachineId, 'vrp_active_machine');
+        store.put(snapshot.activeMachine, 'vrp');
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error || new Error('IndexedDB write failed.'));
+        tx.onabort = () => reject(tx.error || new Error('IndexedDB write was aborted.'));
+      }));
+      writeQueue.catch(e => {
+        if (!warned) {
+          warned = true;
+          alert('Could not save data to IndexedDB: ' + (e.message || e) + '. Export a backup if you have important data.');
+        }
+      });
+      return writeQueue;
+    }
+    async function initStorage() {
+      db = await openPlannerDB();
+      let storedMachines = await dbGet('vrp_machines');
+      let storedActiveId = await dbGet('vrp_active_machine');
+
+      // One-time migration from the previous localStorage version.
+      if (!Array.isArray(storedMachines) || !storedMachines.length) {
+        try {
+          storedMachines = JSON.parse(localStorage.getItem('vrp_machines') || '[]') || [];
+        } catch (e) { storedMachines = []; }
+        try {
+          storedActiveId = localStorage.getItem('vrp_active_machine') || '';
+        } catch (e) { storedActiveId = ''; }
+
+        if (!storedMachines.length) {
+          let legacy = null;
+          try { legacy = JSON.parse(localStorage.getItem('vrp') || 'null'); } catch (e) { }
+          const initial = normalizeMachine(legacy || blankMachine());
+          storedActiveId = 'machine-' + Date.now().toString(36);
+          storedMachines = [{id: storedActiveId, name: initial.name || 'Machine 1', data: initial}];
+        }
+      }
+
+      machines = storedMachines;
+      activeMachineId = storedActiveId || '';
+      activeRecord = machines.find(m => m.id === activeMachineId) || machines[0];
+      if (!activeRecord) {
+        activeRecord = {id: 'machine-' + Date.now().toString(36), name: 'Machine 1', data: blankMachine()};
+        machines = [activeRecord];
+      }
+      activeMachineId = activeRecord.id;
+      S = normalizeMachine(activeRecord.data);
+      activeRecord.data = S;
+      activeRecord.name = S.name || activeRecord.name || 'Machine 1';
+      await dbSaveLibrary();
+
+      // Remove legacy copies only after IndexedDB has successfully stored the migrated data.
       try {
-        activeRecord = machines.find(m => m.id === activeMachineId) || activeRecord;
-        if (activeRecord) {activeRecord.data = S; activeRecord.name = S.name || activeRecord.name}
-        localStorage.setItem('vrp_machines', JSON.stringify(machines));
-        localStorage.setItem('vrp_active_machine', activeMachineId);
-        localStorage.setItem('vrp', JSON.stringify(S));
-      } catch (e) {if (!warned) {warned = true; alert('Browser storage is full or unavailable. Some changes may not be saved. Consider reducing the number or size of product photos.')} }
+        localStorage.removeItem('vrp_machines');
+        localStorage.removeItem('vrp_active_machine');
+        localStorage.removeItem('vrp');
+      } catch (e) { }
+    }
+    const persistLibrary = () => {
+      if (!db || !S) return;
+      activeRecord = machines.find(m => m.id === activeMachineId) || activeRecord;
+      if (activeRecord) { activeRecord.data = S; activeRecord.name = S.name || activeRecord.name; }
+      return dbSaveLibrary();
     };
     const save = () => persistLibrary();
     const activateMachine = id => {
@@ -806,7 +884,7 @@
     const run = p => p.then(done).catch(e => done('Import failed: ' + e.message));
     function vM() {
       const tot = S.trays.reduce((a, t) => a + t.slots, 0); return `<div class="card"><h2>1. Machine setup</h2>
-<div class="machine-library"><label>Saved machine templates<select data-a="machine-select">${machines.map(m => `<option value="${esc(m.id)}"${m.id === activeMachineId ? ' selected' : ''}>${esc(m.name || 'Unnamed machine')}</option>`).join('')}</select></label><div class="row"><button class="pri" data-a="newmachine">Save as new machine</button><button data-a="savemachine">Save current machine</button><button class="sec" data-a="deletemachine"${machines.length <= 1 ? ' disabled' : ''}>Delete machine</button></div><p class="mu">Changes are saved automatically to this machine in this browser. Select a saved machine to return to it later.</p></div>
+<div class="machine-library"><label>Saved machine templates<select data-a="machine-select">${machines.map(m => `<option value="${esc(m.id)}"${m.id === activeMachineId ? ' selected' : ''}>${esc(m.name || 'Unnamed machine')}</option>`).join('')}</select></label><div class="row"><button class="pri" data-a="newmachine">Save as new machine</button><button data-a="savemachine">Save current machine</button><button class="sec" data-a="deletemachine"${machines.length <= 1 ? ' disabled' : ''}>Delete machine</button></div><p class="mu">Changes are saved automatically in this browser using IndexedDB (which supports substantially more data than localStorage). Select a saved machine to return to it later.</p></div>
 <label>Machine name<input data-a="name" value="${esc(S.name)}"></label>
 <label>Number of trays<input type="number" min="1" max="20" value="${S.trays.length}" data-a="ntrays"></label>
 ${S.trays.map((r, i) => `<div class="tray-setup"><h3>Tray ${i + 1} <small>(${r.slots} slots)</small></h3><label>Number of slots<input type="number" min="1" max="20" value="${r.slots}" data-a="slots" data-t="${i}"></label><div class="slot-cap-list">${Array.from({length: r.slots}, (_, j) => `<label>Slot ${slotNo(i, j)} capacity<input type="number" min="1" max="99" value="${capAt(i, j)}" data-a="slotcap" data-t="${i}" data-s="${j}"></label>`).join('')}</div></div>`).join('')}
@@ -900,7 +978,13 @@ ${ids.length && S.tot !== false ? `<table class="tot"><thead><tr><th colspan="3"
       else if (a == 'newimg' && el.files[0]) readImg(el.files[0], d => {pend = d; const p = $('#pprev'); p.src = d; p.style.display = 'block'});
       else if (a == 'chimg' && el.files[0]) {const id = el.dataset.id; readImg(el.files[0], d => {S.prods.find(p => p.id == id).img = d; save(); render()})}
     });
-    $('#hl').src = LOGO; render();
+    $('#hl').src = LOGO;
+    initStorage().then(() => {
+      render();
+    }).catch(error => {
+      console.error('Vending Refill Planner storage initialization failed:', error);
+      $('#main').innerHTML = `<div class="card"><h2>Unable to open planner storage</h2><p>${esc(error.message || error)}</p><p>Please use an up-to-date browser with IndexedDB enabled, then reload this page. Your previous localStorage data has not been intentionally deleted.</p></div>`;
+    });
   </script>
 </body>
 
