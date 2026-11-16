@@ -398,6 +398,15 @@
       -webkit-box-orient: vertical
     }
 
+    .pmrp {
+      flex: none;
+      font-size: 10px;
+      line-height: 1;
+      font-weight: 800;
+      white-space: nowrap;
+      color: #111
+    }
+
     .q {
       font-size: 22px;
       font-weight: 800;
@@ -586,6 +595,12 @@
       .pn {
         font-size: var(--fs);
         line-height: 1.1
+      }
+
+      .pmrp {
+        font-size: var(--fs);
+        line-height: 1;
+        font-weight: 800
       }
 
       .q {
@@ -957,7 +972,7 @@ ${CATS.map(c => {const l = PRODS.filter(p => p.cat == c); return l.length ? `<h3
     }
     function cell(t, s) {
       const e = S.plan[t + '-' + s], p = e && PRODS.find(x => x.id == e.pid), cap = capAt(t, s);
-      return `<div class="slot" data-a="edit" data-t="${t}" data-s="${s}"${p ? ` style="background:#fff"` : ''}><div class="sn">Slot ${slotNo(t, s)}</div>${p ? `<div class="mid">${img(p)}<div class="q">×${Math.min(e.qty, cap)}</div></div><div class="pn">${esc(p.name)}${p.mrp !== '' && p.mrp != null ? `<br>MRP ₹${esc(p.mrp)}` : ''}</div>` : '<div class="empty">empty</div>'}</div>`
+      return `<div class="slot" data-a="edit" data-t="${t}" data-s="${s}"${p ? ` style="background:#fff"` : ''}><div class="sn">Slot ${slotNo(t, s)}</div>${p ? `<div class="mid">${img(p)}<div class="q">×${Math.min(e.qty, cap)}</div></div><div class="pn">${esc(p.name)}</div><div class="pmrp">${p.mrp !== '' && p.mrp != null ? `MRP ₹${esc(p.mrp)}` : ''}</div>` : '<div class="empty">empty</div>'}</div>`
     }
 
     function vR() {
