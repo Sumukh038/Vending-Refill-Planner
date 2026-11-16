@@ -703,6 +703,8 @@
     // IndexedDB stores the complete machine library and product photos.
     // Existing localStorage data is imported once on first launch after this update.
     let machines = [], activeMachineId = '', S = null, activeRecord = null;
+    // One shared product/category master for every machine; plans and layouts stay per-machine.
+    let CATS = [...DEFAULT_CATS], PRODS = [];
     let v = 0, ed = null, pend = null, warned = false;
     const DB_NAME = 'VendingRefillPlannerDB', DB_VERSION = 1, DB_STORE = 'appData';
     let db = null, writeQueue = Promise.resolve();
@@ -729,16 +731,24 @@
     }
     function dbSaveLibrary() {
       // Queue writes so rapid edits cannot overwrite a newer machine-library snapshot.
+      const stripCatalog = data => {
+        const copy = {...data};
+        delete copy.cats;
+        delete copy.prods;
+        return copy;
+      };
       const snapshot = {
-        machines: machines.map(m => ({id: m.id, name: m.name, data: m.data})),
+        machines: machines.map(m => ({id: m.id, name: m.name, data: stripCatalog(m.data)})),
         activeMachineId,
-        activeMachine: S
+        activeMachine: S ? {...S, cats: CATS, prods: PRODS} : S,
+        catalog: {cats: CATS, prods: PRODS}
       };
       writeQueue = writeQueue.then(() => new Promise((resolve, reject) => {
         const tx = db.transaction(DB_STORE, 'readwrite'), store = tx.objectStore(DB_STORE);
         store.put(snapshot.machines, 'vrp_machines');
         store.put(snapshot.activeMachineId, 'vrp_active_machine');
         store.put(snapshot.activeMachine, 'vrp');
+        store.put(snapshot.catalog, 'vrp_catalog');
         tx.oncomplete = resolve;
         tx.onerror = () => reject(tx.error || new Error('IndexedDB write failed.'));
         tx.onabort = () => reject(tx.error || new Error('IndexedDB write was aborted.'));
@@ -755,6 +765,7 @@
       db = await openPlannerDB();
       let storedMachines = await dbGet('vrp_machines');
       let storedActiveId = await dbGet('vrp_active_machine');
+      let storedCatalog = await dbGet('vrp_catalog');
 
       // One-time migration from the previous localStorage version.
       if (!Array.isArray(storedMachines) || !storedMachines.length) {
@@ -782,7 +793,44 @@
         machines = [activeRecord];
       }
       activeMachineId = activeRecord.id;
+
+      // First launch migration: combine the existing per-machine product lists into
+      // one catalog. The active machine takes priority; other machines fill gaps.
+      if (storedCatalog && Array.isArray(storedCatalog.prods) && Array.isArray(storedCatalog.cats)) {
+        CATS = storedCatalog.cats.map(c => c === 'Non-aerated' ? 'Non-Aerated' : c);
+        PRODS = storedCatalog.prods;
+      } else {
+        const orderedRecords = [activeRecord, ...machines.filter(m => m !== activeRecord)];
+        CATS = [];
+        PRODS = [];
+        for (const rec of orderedRecords) {
+          const data = normalizeMachine(rec.data || blankMachine());
+          const productIdMap = new Map();
+          for (const cat of data.cats) if (!CATS.some(c => norm(c) === norm(cat))) CATS.push(cat);
+          for (const product of data.prods) {
+            const existing = PRODS.find(p => norm(p.name) === norm(product.name));
+            if (!existing) {
+              PRODS.push({...product});
+              productIdMap.set(product.id, product.id);
+            } else {
+              productIdMap.set(product.id, existing.id);
+              if ((existing.mrp === '' || existing.mrp == null) && product.mrp !== '' && product.mrp != null) existing.mrp = product.mrp;
+              if (!existing.img && product.img) existing.img = product.img;
+              if (!existing.def && product.def) existing.def = product.def;
+              if (!existing.cat && product.cat) existing.cat = product.cat;
+            }
+          }
+          // Keep existing machine planograms linked to the merged shared product IDs.
+          for (const entry of Object.values(data.plan || {})) {
+            if (entry && productIdMap.has(entry.pid)) entry.pid = productIdMap.get(entry.pid);
+          }
+          rec.data = data;
+        }
+        if (!CATS.length) CATS = [...DEFAULT_CATS];
+      }
+      PRODS = PRODS.map(p => ({...p, cat: p.cat === 'Non-aerated' ? 'Non-Aerated' : (p.cat || 'Uncategorised'), mrp: p.mrp ?? ''}));
       S = normalizeMachine(activeRecord.data);
+      S.cats = CATS; S.prods = PRODS;
       activeRecord.data = S;
       activeRecord.name = S.name || activeRecord.name || 'Machine 1';
       await dbSaveLibrary();
@@ -797,14 +845,17 @@
     const persistLibrary = () => {
       if (!db || !S) return;
       activeRecord = machines.find(m => m.id === activeMachineId) || activeRecord;
-      if (activeRecord) { activeRecord.data = S; activeRecord.name = S.name || activeRecord.name; }
+      if (activeRecord) {
+        S.cats = CATS; S.prods = PRODS;
+        activeRecord.data = S; activeRecord.name = S.name || activeRecord.name;
+      }
       return dbSaveLibrary();
     };
     const save = () => persistLibrary();
     const activateMachine = id => {
       persistLibrary();
       const rec = machines.find(m => m.id === id); if (!rec) return;
-      activeMachineId = id; activeRecord = rec; S = normalizeMachine(rec.data); rec.data = S; rec.name = S.name || rec.name;
+      activeMachineId = id; activeRecord = rec; S = normalizeMachine(rec.data); S.cats = CATS; S.prods = PRODS; rec.data = S; rec.name = S.name || rec.name;
       ed = null; pend = null; persistLibrary(); render();
     };
     const createMachine = () => {
@@ -813,7 +864,7 @@
       copy.name = 'New machine'; copy.plan = {}; copy.paper = S.paper; copy.tot = S.tot;
       const id = 'machine-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
       const rec = {id, name: copy.name, data: normalizeMachine(copy)};
-      machines.push(rec); activeMachineId = id; activeRecord = rec; S = rec.data; ed = null; v = 0; persistLibrary(); render();
+      machines.push(rec); activeMachineId = id; activeRecord = rec; S = rec.data; S.cats = CATS; S.prods = PRODS; ed = null; v = 0; persistLibrary(); render();
     };
     const num = (x, a, b) => Math.max(a, Math.min(b, parseInt(x) || a));
     const capAt = (t, s) => num(S.trays[t].caps?.[s] ?? S.trays[t].cap ?? 10, 1, 99);
@@ -835,7 +886,7 @@
     };
     const img = p => p.img ? `<img src="${p.img}" alt="">` : `<div class="ph">${esc((p.name[0] || '?').toUpperCase())}</div>`;
     function readImg(f, cb) {const r = new FileReader(); r.onload = () => {const im = new Image(); im.onload = () => {const k = Math.min(1, 240 / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = im.width * k; c.height = im.height * k; const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(im, 0, 0, c.width, c.height); cb(c.toDataURL('image/jpeg', .8))}; im.src = r.result}; r.readAsDataURL(f)}
-    const colOf = p => COL[Math.max(0, S.cats.indexOf(p.cat)) % COL.length];
+    const colOf = p => COL[Math.max(0, CATS.indexOf(p.cat)) % COL.length];
 
     const P = {'4 x 6 in portrait (shipping label)': [95.6, 146.4, 3], '4 x 6 in landscape (shipping label)': [146.4, 95.6, 3], 'A4 landscape': [281, 194, 8], 'A4 portrait': [194, 281, 8], 'A5 landscape (half sheet)': [198, 136, 6], 'A5 portrait (half sheet)': [136, 198, 6], 'A6 landscape (quarter sheet)': [140, 97, 4], 'A6 portrait (quarter sheet)': [97, 140, 4], 'A7 landscape (eighth sheet)': [99, 68, 3], 'A7 portrait (eighth sheet)': [68, 99, 3]};
     const PAGE_SIZE = {'4 x 6 in portrait (shipping label)': '4in 6in', '4 x 6 in landscape (shipping label)': '6in 4in'};
@@ -861,7 +912,7 @@
     let importDraft = [];
     function validateImport(items) {
       const seen = new Set(); return items.map((it, i) => {
-        const key = norm(it.name), duplicate = seen.has(key) || S.prods.some(p => norm(p.name) === key); seen.add(key);
+        const key = norm(it.name), duplicate = seen.has(key) || PRODS.some(p => norm(p.name) === key); seen.add(key);
         const mrp = it.mrp === '' ? null : Number(String(it.mrp).replace(/[,₹ ]/g, ''));
         const errors = []; if (!it.name) errors.push('Missing name'); if (it.mrp !== '' && (!Number.isFinite(mrp) || mrp < 0)) errors.push('Invalid MRP');
         return {...it, mrp, duplicate, errors, index: i};
@@ -873,13 +924,13 @@
     }
     async function applyItems(items) {
       let nw = 0, up = 0; for (const it of items) {
-        const cn = it.cat || 'Uncategorised'; let cat = S.cats.find(c => norm(c) == norm(cn)); if (!cat) {cat = title(cn); S.cats.push(cat)}
-        let p = S.prods.find(x => norm(x.name) == norm(it.name)); if (p) up++; else {p = {id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: String(it.name), cat, img: null}; S.prods.push(p); nw++}
+        const cn = it.cat || 'Uncategorised'; let cat = CATS.find(c => norm(c) == norm(cn)); if (!cat) {cat = title(cn); CATS.push(cat)}
+        let p = PRODS.find(x => norm(x.name) == norm(it.name)); if (p) up++; else {p = {id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: String(it.name), cat, img: null}; PRODS.push(p); nw++}
         p.cat = cat; if (it.mrp !== '' && it.mrp != null && Number.isFinite(Number(it.mrp))) p.mrp = Number(it.mrp); if (it.def) p.def = +it.def; const image = it.image || it.img; if (image) {if (/^https?:\/\//i.test(image)) p.img = image; else {const d = await shrink(image); if (d) p.img = d} }
       }
-      save(); const np = S.prods.filter(p => !p.img).length; return `Imported ${nw} new and updated ${up} products. ${np} still have no photo.`
+      save(); const np = PRODS.filter(p => !p.img).length; return `Imported ${nw} new and updated ${up} products. ${np} still have no photo.`
     }
-    async function matchImgs(files) {let n = 0; for (const f of files) {const k = norm(f.name.replace(/\.[^.]+$/, '')); const p = S.prods.find(x => norm(x.name) == k) || S.prods.find(x => k && (norm(x.name).includes(k) || k.includes(norm(x.name)))); if (p) {const d = await new Promise(r => {const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(f)}).then(shrink); if (d) {p.img = d; n++} } } save(); return `${n} of ${files.length} photos matched a product by file name.`}
+    async function matchImgs(files) {let n = 0; for (const f of files) {const k = norm(f.name.replace(/\.[^.]+$/, '')); const p = PRODS.find(x => norm(x.name) == k) || PRODS.find(x => k && (norm(x.name).includes(k) || k.includes(norm(x.name)))); if (p) {const d = await new Promise(r => {const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(f)}).then(shrink); if (d) {p.img = d; n++} } } save(); return `${n} of ${files.length} photos matched a product by file name.`}
     const done = m => {render(); const e = $('#imsg'); if (e) e.textContent = m};
     const run = p => p.then(done).catch(e => done('Import failed: ' + e.message));
     function vM() {
@@ -892,36 +943,36 @@ ${S.trays.map((r, i) => `<div class="tray-setup"><h3>Tray ${i + 1} <small>(${r.s
     }
 
     function vP() {
-      return `<div class="card"><h2>2. Categories</h2><div class="chips">${S.cats.map((c, i) => `<span class="chip" style="background:${COL[i % COL.length]};color:#1c1c1a">${esc(c)} <button type="button" data-a="delcat" data-c="${esc(c)}" title="Delete category" aria-label="Delete ${esc(c)}" style="padding:1px 7px;margin-left:6px;border:0;border-radius:50%;background:rgba(0,0,0,.12);color:#1c1c1a;font-weight:700">×</button></span>`).join('')}</div>
+      return `<div class="card"><h2>2. Categories</h2><div class="chips">${CATS.map((c, i) => `<span class="chip" style="background:${COL[i % COL.length]};color:#1c1c1a">${esc(c)} <button type="button" data-a="delcat" data-c="${esc(c)}" title="Delete category" aria-label="Delete ${esc(c)}" style="padding:1px 7px;margin-left:6px;border:0;border-radius:50%;background:rgba(0,0,0,.12);color:#1c1c1a;font-weight:700">×</button></span>`).join('')}</div>
 <div class="row"><label>New category<input id="cname" placeholder="Category name"></label><button data-a="addcat">Add category</button><button class="pri" data-a="savecats">Save categories</button></div></div>
 <div class="card"><h2>3. Add a product</h2><div class="row"><label>Product name<input id="pname" placeholder="Product name"></label><label>MRP (₹)<input id="pmrp" type="number" min="0" step="0.01" placeholder="0.00"></label>
-<label>Category<select id="pcat">${S.cats.map(c => `<option>${esc(c)}</option>`).join('')}</select></label><label>Photo<input type="file" accept="image/*" data-a="newimg"></label><img id="pprev" alt="" width="48" height="48" style="display:none"><button class="pri" data-a="addprod">Add product</button></div></div>
+<label>Category<select id="pcat">${CATS.map(c => `<option>${esc(c)}</option>`).join('')}</select></label><label>Photo<input type="file" accept="image/*" data-a="newimg"></label><img id="pprev" alt="" width="48" height="48" style="display:none"><button class="pri" data-a="addprod">Add product</button></div></div>
 <div class="card"><h2>Bulk Import</h2><p class="mu">Import multiple products using Excel (.xlsx), CSV or TSV. Required: Product Name. Optional: MRP, Category, Image/Image Reference.</p>
 <label>Choose Excel / CSV file<input type="file" accept=".xlsx,.xls,.csv,.tsv,.txt" data-a="impfile"></label>
 <label>Or paste rows copied from Excel / Google Sheets<textarea id="paste" rows="4" style="width:100%;max-width:560px;display:block;font:inherit;background:var(--bg);color:var(--tx);border:1px solid var(--bd);border-radius:8px"></textarea></label>
 <div class="row"><button data-a="imppaste">Preview pasted rows</button><label>Bulk product photos<input type="file" accept="image/*" multiple data-a="impimgs"></label></div><p id="imsg" class="mu"></p></div>
-<div class="card"><h2>Products (${S.prods.length}${S.prods.some(p => !p.img) ? `, ${S.prods.filter(p => !p.img).length} without photo` : ''})</h2>
-<div class="prod-tools"><label><input type="checkbox" data-a="selectall" style="display:inline;width:auto"> Select all products</label><label>Move selected to<select id="bulkcat">${S.cats.map(c => `<option>${esc(c)}</option>`).join('')}</select></label><button data-a="bulkassign">Assign category</button></div>
-${S.cats.map(c => {const l = S.prods.filter(p => p.cat == c); return l.length ? `<h3>${esc(c)}</h3><div class="pg">${l.map(p => `<div class="prod">${img(p)}<label><input type="checkbox" class="prod-select" value="${esc(p.id)}" style="display:inline;width:auto"> Select</label><div class="edit-fields"><label>Product name<input data-a="editname" data-id="${esc(p.id)}" value="${esc(p.name)}"></label><label>MRP (₹)<input type="number" min="0" step="0.01" data-a="editmrp" data-id="${esc(p.id)}" value="${esc(p.mrp ?? '')}"></label><label>Category<select data-a="editcat" data-id="${esc(p.id)}">${S.cats.map(x => `<option${x === p.cat ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></label></div><label>Photo<input type="file" accept="image/*" data-a="chimg" data-id="${esc(p.id)}"></label><button class="sec" data-a="saveproduct" data-id="${esc(p.id)}">Save changes</button><button class="sec" data-a="delprod" data-id="${esc(p.id)}">Delete</button></div>`).join('')}</div>` : ''}).join('') || '<p class="mu">No products yet. Add your first one above.</p>'}</div>`
+<div class="card"><h2>Products (${PRODS.length}${PRODS.some(p => !p.img) ? `, ${PRODS.filter(p => !p.img).length} without photo` : ''})</h2>
+<div class="prod-tools"><label><input type="checkbox" data-a="selectall" style="display:inline;width:auto"> Select all products</label><label>Move selected to<select id="bulkcat">${CATS.map(c => `<option>${esc(c)}</option>`).join('')}</select></label><button data-a="bulkassign">Assign category</button></div>
+${CATS.map(c => {const l = PRODS.filter(p => p.cat == c); return l.length ? `<h3>${esc(c)}</h3><div class="pg">${l.map(p => `<div class="prod">${img(p)}<label><input type="checkbox" class="prod-select" value="${esc(p.id)}" style="display:inline;width:auto"> Select</label><div class="edit-fields"><label>Product name<input data-a="editname" data-id="${esc(p.id)}" value="${esc(p.name)}"></label><label>MRP (₹)<input type="number" min="0" step="0.01" data-a="editmrp" data-id="${esc(p.id)}" value="${esc(p.mrp ?? '')}"></label><label>Category<select data-a="editcat" data-id="${esc(p.id)}">${CATS.map(x => `<option${x === p.cat ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></label></div><label>Photo<input type="file" accept="image/*" data-a="chimg" data-id="${esc(p.id)}"></label><button class="sec" data-a="saveproduct" data-id="${esc(p.id)}">Save changes</button><button class="sec" data-a="delprod" data-id="${esc(p.id)}">Delete</button></div>`).join('')}</div>` : ''}).join('') || '<p class="mu">No products yet. Add your first one above.</p>'}</div>`
     }
     function cell(t, s) {
-      const e = S.plan[t + '-' + s], p = e && S.prods.find(x => x.id == e.pid), cap = capAt(t, s);
+      const e = S.plan[t + '-' + s], p = e && PRODS.find(x => x.id == e.pid), cap = capAt(t, s);
       return `<div class="slot" data-a="edit" data-t="${t}" data-s="${s}"${p ? ` style="background:#fff"` : ''}><div class="sn">Slot ${slotNo(t, s)}</div>${p ? `<div class="mid">${img(p)}<div class="q">×${Math.min(e.qty, cap)}</div></div><div class="pn">${esc(p.name)}${p.mrp !== '' && p.mrp != null ? `<br>MRP ₹${esc(p.mrp)}` : ''}</div>` : '<div class="empty">empty</div>'}</div>`
     }
 
     function vR() {
-      const tot = {}; S.trays.forEach((r, t) => {for (let s = 0; s < r.slots; s++) {const e = S.plan[t + '-' + s]; if (e && e.qty > 0 && S.prods.some(p => p.id == e.pid)) tot[e.pid] = (tot[e.pid] || 0) + Math.min(e.qty, capAt(t, s))} });
+      const tot = {}; S.trays.forEach((r, t) => {for (let s = 0; s < r.slots; s++) {const e = S.plan[t + '-' + s]; if (e && e.qty > 0 && PRODS.some(p => p.id == e.pid)) tot[e.pid] = (tot[e.pid] || 0) + Math.min(e.qty, capAt(t, s))} });
       const ids = Object.keys(tot), sum = ids.reduce((a, k) => a + tot[k], 0);
       const f = fit(); return `<div class="card noprint"><h2>4. Plan &amp; print</h2><p class="mu">Tap any slot to choose its product and quantity. Then print and place the sheet on the tote lid.</p><div class="row"><label>Paper &amp; orientation<select data-a="paper">${Object.keys(P).map(k => `<option${paper() == k ? ' selected' : ''}>${k}</option>`).join('')}</select></label><label style="font-weight:400"><input type="checkbox" data-a="totals"${S.tot !== false ? ' checked' : ''} style="display:inline;width:auto"> Pick-list totals on a 2nd page</label></div><p class="mu">${f.msg}</p><button class="pri" data-a="print">Print colour sheet</button> <span class="hint mu">To download: choose “Save as PDF” in the print window. The PDF keeps the exact paper size. If nothing opens, open this page in its own browser tab and try again.</span></div>
 <div class="sheet" style="${f.css}"><div class="hd"><img class="logo" src="${LOGO}" alt="Hungry Picnic"><div><h2>${esc(S.name)} — refill sheet</h2><div class="mu">${new Date().toLocaleDateString()} · ${sum} units to pack</div></div></div>
 ${S.trays.map((r, t) => `<div class="tray"><b>Tray ${t + 1}</b><div class="grid" style="--n:${r.slots};grid-template-columns:repeat(${r.slots},minmax(96px,1fr))">${Array.from({length: r.slots}, (_, s) => cell(t, s)).join('')}</div></div>`).join('')}
-${ids.length && S.tot !== false ? `<table class="tot"><thead><tr><th colspan="3">Pick list (all trays)</th><th colspan="3">Pick list (all trays)</th></tr></thead><tbody>${Array.from({length: Math.ceil(ids.length / 2)}, (_, i) => {const a = ids[i * 2], b = ids[i * 2 + 1]; const item = k => {if (!k) return '<td></td><td></td><td></td>'; const p = S.prods.find(x => x.id == k); return `<td>${img(p)}</td><td class="tot-name">${esc(p.name)}<br>MRP ₹${p.mrp !== '' && p.mrp != null ? esc(p.mrp) : '—'}</td><td><b>${tot[k]}</b></td>`}; return `<tr>${item(a)}${item(b)}</tr>`}).join('')}</tbody></table>` : ''}</div>`
+${ids.length && S.tot !== false ? `<table class="tot"><thead><tr><th colspan="3">Pick list (all trays)</th><th colspan="3">Pick list (all trays)</th></tr></thead><tbody>${Array.from({length: Math.ceil(ids.length / 2)}, (_, i) => {const a = ids[i * 2], b = ids[i * 2 + 1]; const item = k => {if (!k) return '<td></td><td></td><td></td>'; const p = PRODS.find(x => x.id == k); return `<td>${img(p)}</td><td class="tot-name">${esc(p.name)}<br>MRP ₹${p.mrp !== '' && p.mrp != null ? esc(p.mrp) : '—'}</td><td><b>${tot[k]}</b></td>`}; return `<tr>${item(a)}${item(b)}</tr>`}).join('')}</tbody></table>` : ''}</div>`
     }
 
     function modal() {
-      const m = $('#modal'); if (!ed) {m.innerHTML = ''; return } const cap = capAt(ed.t, ed.s), list = S.prods.filter(p => ed.cat == 'All' || p.cat == ed.cat);
+      const m = $('#modal'); if (!ed) {m.innerHTML = ''; return } const cap = capAt(ed.t, ed.s), list = PRODS.filter(p => ed.cat == 'All' || p.cat == ed.cat);
       m.innerHTML = `<div class="ov"><div class="dlg"><h3>Tray ${ed.t + 1} · Slot ${slotNo(ed.t, ed.s)} <small>capacity ${cap}</small></h3>
-<div class="chips">${['All', ...S.cats].map(c => `<button class="chip ${ed.cat == c ? 'on' : ''}" data-a="chip" data-c="${esc(c)}">${esc(c)}</button>`).join('')}</div>
+<div class="chips">${['All', ...CATS].map(c => `<button class="chip ${ed.cat == c ? 'on' : ''}" data-a="chip" data-c="${esc(c)}">${esc(c)}</button>`).join('')}</div>
 <div class="pg">${list.map(p => `<button class="pc ${ed.pid == p.id ? 'sel' : ''}" data-a="pick" data-id="${p.id}">${img(p)}<span>${esc(p.name)}</span><b>MRP ₹${p.mrp !== '' && p.mrp != null ? esc(p.mrp) : '—'}</b></button>`).join('') || '<p class="mu">No products here yet. Add some in step 2.</p>'}</div>
 <label>Units to pack in this slot (max ${cap})<input type="number" id="qty" min="0" max="${cap}" value="${ed.qty}"></label>
 <div class="row"><button class="pri" data-a="save">Save slot</button><button class="sec" data-a="tray">Apply to whole tray</button><button class="sec" data-a="clear">Clear</button><button class="sec" data-a="close">Cancel</button></div></div></div>`}
@@ -937,20 +988,27 @@ ${ids.length && S.tot !== false ? `<table class="tot"><thead><tr><th colspan="3"
         if (machines.length <= 1) {alert('At least one machine template must remain.'); return }
         if (!confirm('Delete the saved template for ' + (S.name || 'this machine') + '? This cannot be undone.')) return;
         machines = machines.filter(m => m.id !== activeMachineId);
-        const next = machines[0]; activeMachineId = next.id; activeRecord = next; S = normalizeMachine(next.data); ed = null; persistLibrary(); render();
+        const next = machines[0]; activeMachineId = next.id; activeRecord = next; S = normalizeMachine(next.data); S.cats = CATS; S.prods = PRODS; ed = null; persistLibrary(); render();
       }
-      else if (a == 'addcat') {const n = $('#cname').value.trim(); if (n && !S.cats.some(c => norm(c) === norm(n))) {S.cats.push(n); save(); render()} }
+      else if (a == 'addcat') {const n = $('#cname').value.trim(); if (n && !CATS.some(c => norm(c) === norm(n))) {CATS.push(n); save(); render()} }
       else if (a == 'savecats') {save(); alert('Product categories saved in this browser.')}
-      else if (a == 'renamecat') {const old = d.c, n = prompt('Rename category:', old); if (n && n.trim() && n.trim() !== old) {const next = n.trim(); if (S.cats.some(c => norm(c) === norm(next) && c !== old)) {alert('That category already exists.'); return } S.cats = S.cats.map(c => c === old ? next : c); S.prods.forEach(p => {if (p.cat === old) p.cat = next}); save(); render()} }
-      else if (a == 'bulkassign') {const ids = [...document.querySelectorAll('.prod-select:checked')].map(x => x.value), cat = $('#bulkcat').value; if (!ids.length) {alert('Select at least one product.'); return } S.prods.forEach(p => {if (ids.includes(p.id)) p.cat = cat}); save(); render()}
+      else if (a == 'renamecat') {const old = d.c, n = prompt('Rename category:', old); if (n && n.trim() && n.trim() !== old) {const next = n.trim(); if (CATS.some(c => norm(c) === norm(next) && c !== old)) {alert('That category already exists.'); return } CATS = CATS.map(c => c === old ? next : c); PRODS.forEach(p => {if (p.cat === old) p.cat = next}); save(); render()} }
+      else if (a == 'bulkassign') {const ids = [...document.querySelectorAll('.prod-select:checked')].map(x => x.value), cat = $('#bulkcat').value; if (!ids.length) {alert('Select at least one product.'); return } PRODS.forEach(p => {if (ids.includes(p.id)) p.cat = cat}); save(); render()}
       else if (a == 'selectall') {document.querySelectorAll('.prod-select').forEach(x => x.checked = el.checked)}
-      else if (a == 'saveproduct') {const id = d.id; const p = S.prods.find(x => x.id === id); if (!p) return; const name = $(`[data-a="editname"][data-id="${id}"]`).value.trim(), mrp = $(`[data-a="editmrp"][data-id="${id}"]`).value, cat = $(`[data-a="editcat"][data-id="${id}"]`).value; if (!name) {alert('Product name cannot be blank.'); return } if (mrp !== '' && (!Number.isFinite(Number(mrp)) || Number(mrp) < 0)) {alert('Enter a valid MRP.'); return } p.name = name; p.mrp = mrp === '' ? '' : Number(mrp); p.cat = cat; save(); render()}
-      else if (a == 'delcat') {if (S.prods.some(p => p.cat == d.c)) {alert('Remove or move the products in this category first.'); return } S.cats = S.cats.filter(c => c != d.c); save(); render()}
-      else if (a == 'addprod') {const n = $('#pname').value.trim(); if (!n) {alert('Enter a product name.'); return } S.prods.push({id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: n, cat: $('#pcat').value, img: pend, mrp: $('#pmrp').value === '' ? '' : Number($('#pmrp').value)}); pend = null; save(); render()}
-      else if (a == 'delprod') {S.prods = S.prods.filter(p => p.id != d.id); for (const k in S.plan) if (S.plan[k].pid == d.id) delete S.plan[k]; save(); render()}
+      else if (a == 'saveproduct') {const id = d.id; const p = PRODS.find(x => x.id === id); if (!p) return; const name = $(`[data-a="editname"][data-id="${id}"]`).value.trim(), mrp = $(`[data-a="editmrp"][data-id="${id}"]`).value, cat = $(`[data-a="editcat"][data-id="${id}"]`).value; if (!name) {alert('Product name cannot be blank.'); return } if (mrp !== '' && (!Number.isFinite(Number(mrp)) || Number(mrp) < 0)) {alert('Enter a valid MRP.'); return } p.name = name; p.mrp = mrp === '' ? '' : Number(mrp); p.cat = cat; save(); render()}
+      else if (a == 'delcat') {if (PRODS.some(p => p.cat == d.c)) {alert('Remove or move the products in this category first.'); return } CATS = CATS.filter(c => c != d.c); save(); render()}
+      else if (a == 'addprod') {const n = $('#pname').value.trim(); if (!n) {alert('Enter a product name.'); return } PRODS.push({id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: n, cat: $('#pcat').value, img: pend, mrp: $('#pmrp').value === '' ? '' : Number($('#pmrp').value)}); pend = null; save(); render()}
+      else if (a == 'delprod') {
+        PRODS = PRODS.filter(p => p.id != d.id);
+        for (const machine of machines) {
+          const plan = machine.id === activeMachineId ? S.plan : (machine.data && machine.data.plan) || {};
+          for (const k in plan) if (plan[k].pid == d.id) delete plan[k];
+        }
+        save(); render();
+      }
       else if (a == 'edit') {const t = +d.t, s = +d.s, x = S.plan[t + '-' + s]; ed = {t, s, cat: 'All', pid: x ? x.pid : null, qty: x ? Math.min(x.qty, capAt(t, s)) : capAt(t, s)}; modal()}
       else if (a == 'chip') {ed.cat = d.c; modal()}
-      else if (a == 'pick') {ed.pid = d.id; const pp = S.prods.find(x => x.id == d.id); if (pp && pp.def) ed.qty = Math.min(pp.def, capAt(ed.t, ed.s)); modal()}
+      else if (a == 'pick') {ed.pid = d.id; const pp = PRODS.find(x => x.id == d.id); if (pp && pp.def) ed.qty = Math.min(pp.def, capAt(ed.t, ed.s)); modal()}
       else if (a == 'imppaste') {const t = $('#paste').value; if (!t.trim()) return; try {showImportPreview(rowsToItems(parseTable(t)))} catch (x) {$('#imsg').textContent = 'Import error: ' + x.message} }
       else if (a == 'confirmimport') {const valid = importDraft.filter(x => !x.errors.length); if (!valid.length) {alert('No valid rows to import.'); return } run(applyItems(valid)); importDraft = []}
       else if (a == 'cancelimport') {importDraft = []; const m = $('#imsg'); if (m) m.textContent = 'Import cancelled.'}
@@ -976,7 +1034,7 @@ ${ids.length && S.tot !== false ? `<table class="tot"><thead><tr><th colspan="3"
       else if (a == 'slots') {const tr = S.trays[t], n = num(el.value, 1, 20), fallback = tr.caps?.[tr.caps.length - 1] || tr.cap || 10; while (tr.caps.length < n) tr.caps.push(fallback); tr.caps.length = n; tr.slots = n; save(); render()}
       else if (a == 'slotcap') {S.trays[t].caps[+el.dataset.s] = num(el.value, 1, 99); save()}
       else if (a == 'newimg' && el.files[0]) readImg(el.files[0], d => {pend = d; const p = $('#pprev'); p.src = d; p.style.display = 'block'});
-      else if (a == 'chimg' && el.files[0]) {const id = el.dataset.id; readImg(el.files[0], d => {S.prods.find(p => p.id == id).img = d; save(); render()})}
+      else if (a == 'chimg' && el.files[0]) {const id = el.dataset.id; readImg(el.files[0], d => {PRODS.find(p => p.id == id).img = d; save(); render()})}
     });
     $('#hl').src = LOGO;
     initStorage().then(() => {
