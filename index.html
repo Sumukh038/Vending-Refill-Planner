@@ -563,16 +563,19 @@
       .slot {
         height: var(--ch);
         min-height: 0;
-        padding: .5mm;
-        gap: .3mm;
+        padding: .6mm;
+        gap: .45mm;
         overflow: hidden;
         border-width: .3mm;
-        justify-content: space-between
+        justify-content: flex-start;
+        align-items: stretch
       }
 
       .sn {
+        flex: none;
+        width: 100%;
         font-size: calc(var(--fs)*1.1);
-        line-height: 1.3;
+        line-height: 1.2;
         padding: 0
       }
 
@@ -580,9 +583,11 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        gap: 1mm;
-        flex: 1;
-        min-height: 0
+        gap: .8mm;
+        flex: none;
+        width: 100%;
+        min-height: 0;
+        height: var(--im)
       }
 
       .slot img,
@@ -593,14 +598,28 @@
       }
 
       .pn {
-        font-size: var(--fs);
-        line-height: 1.1
+        display: -webkit-box;
+        flex: none;
+        width: 100%;
+        min-height: 0;
+        max-height: calc(var(--fs) * 2.2);
+        overflow: hidden;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        font-size: calc(var(--fs) * .92);
+        line-height: 1.05;
+        overflow-wrap: anywhere
       }
 
       .pmrp {
-        font-size: var(--fs);
-        line-height: 1;
-        font-weight: 800
+        display: block;
+        flex: none;
+        width: 100%;
+        min-height: calc(var(--fs) * 1.2);
+        font-size: calc(var(--fs) * .92);
+        line-height: 1.05;
+        font-weight: 800;
+        white-space: nowrap
       }
 
       .q {
@@ -977,7 +996,7 @@
     const paper = () => P[S.paper] ? S.paper : 'A4 landscape';
     const cl = (a, b, x) => Math.max(a, Math.min(b, x));
     function fit() {
-      const [W, H] = P[paper()], n = S.trays.length, m = Math.max(...S.trays.map(t => t.slots)), hh = cl(6, 11, H * .1), lw = cl(5, 8, W * .045), cw = (W - lw - 1 - (m - 1)) / m, ch = cl(8, 40, (H - hh - 4 - n) / n), fs = cl(5.5, 9, cw * .3), qf = cl(9, 22, cw * .45), im = cl(5, 30, Math.min(ch - 1.31 * fs - 1.5, cw - .45 * qf - 1.5)), r = x => x.toFixed(1);
+      const [W, H] = P[paper()], n = S.trays.length, m = Math.max(...S.trays.map(t => t.slots)), hh = cl(6, 11, H * .1), lw = cl(5, 8, W * .045), cw = (W - lw - 1 - (m - 1)) / m, ch = cl(8, 40, (H - hh - 4 - n) / n), fs = cl(5.5, 9, cw * .3), qf = cl(9, 22, cw * .45), fsmm = fs * 0.3528, qmm = qf * 0.3528, reservedText = (1.45 + 2.15 + 1.25) * fsmm + 2.2, im = cl(5, 30, Math.min(ch - reservedText, cw - qmm - 2.5)), r = x => x.toFixed(1);
       let msg = im < 10 ? `Heads up: on ${paper()}, photos print only about ${Math.round(im)} mm wide. Use a bigger paper size or fewer trays/slots.` : `Fits on one ${paper()} page; photos print about ${Math.round(im)} mm wide.`;
       if (n * (ch + 1) + hh + 4 > H + .5) msg = 'Too many trays to fit on one page of ' + paper() + '. Use a bigger paper size.';
       return {css: `--hh:${r(hh)}mm;--lw:${r(lw)}mm;--cw:${r(cw)}mm;--ch:${r(ch)}mm;--im:${r(im)}mm;--fs:${r(fs)}pt;--qf:${r(qf)}pt`, msg}
