@@ -567,28 +567,21 @@
         gap: .3mm;
         overflow: hidden;
         border-width: .3mm;
-        justify-content: flex-start;
-        align-items: center
+        justify-content: space-between
       }
 
       .sn {
-        order: 0;
-        flex: none;
-        width: 100%;
         font-size: calc(var(--fs)*1.1);
         line-height: 1.3;
         padding: 0
       }
 
       .mid {
-        order: 1;
         display: flex;
         align-items: center;
         justify-content: center;
         gap: 1mm;
-        flex: none;
-        width: 100%;
-        height: var(--im);
+        flex: 1;
         min-height: 0
       }
 
@@ -600,28 +593,14 @@
       }
 
       .pn {
-        order: 2;
-        display: -webkit-box;
-        flex: none;
-        width: 100%;
-        max-height: 2.2em;
-        overflow: hidden;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
         font-size: var(--fs);
-        line-height: 1.1;
-        overflow-wrap: anywhere
+        line-height: 1.1
       }
 
       .pmrp {
-        order: 3;
-        flex: none;
-        width: 100%;
-        margin: 0;
         font-size: var(--fs);
-        line-height: 1.1;
-        font-weight: 800;
-        white-space: nowrap
+        line-height: 1;
+        font-weight: 800
       }
 
       .q {
@@ -765,6 +744,75 @@
         req.onerror = () => reject(req.error);
       });
     }
+    // Full backup/restore uses the same IndexedDB keys as the live application.
+    async function exportBackup() {
+      if (!db) throw new Error('Planner database is not ready. Reload the page and try again.');
+      await persistLibrary();
+      await writeQueue;
+      const data = {
+        vrp_machines: await dbGet('vrp_machines'),
+        vrp_active_machine: await dbGet('vrp_active_machine'),
+        vrp: await dbGet('vrp'),
+        vrp_catalog: await dbGet('vrp_catalog')
+      };
+      if (!Array.isArray(data.vrp_machines) || !data.vrp_machines.length ||
+          !data.vrp || typeof data.vrp !== 'object' ||
+          !data.vrp_catalog || typeof data.vrp_catalog !== 'object') {
+        throw new Error('No complete planner data was found in IndexedDB. Backup was not downloaded.');
+      }
+      const backup = {
+        app: 'Vending Refill Planner',
+        version: 2,
+        exportedAt: new Date().toISOString(),
+        storage: 'IndexedDB',
+        data
+      };
+      const blob = new Blob([JSON.stringify(backup, null, 2)], {type: 'application/json'});
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'Vending-Planner-Backup-' + new Date().toISOString().slice(0, 10) + '.json';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return 'Backup downloaded successfully.';
+    }
+
+    async function restoreBackupFile(file) {
+      if (!file) return;
+      const backup = JSON.parse(await file.text());
+      const data = backup && backup.data;
+      if (backup.app !== 'Vending Refill Planner' ||
+          !data || !Array.isArray(data.vrp_machines) || !data.vrp_machines.length ||
+          !data.vrp || typeof data.vrp !== 'object' ||
+          !data.vrp_catalog || typeof data.vrp_catalog !== 'object' ||
+          !Array.isArray(data.vrp_catalog.cats) || !Array.isArray(data.vrp_catalog.prods)) {
+        throw new Error('Invalid or incomplete backup. The file must contain machine records, active machine data, and the shared product catalog.');
+      }
+      if (!data.vrp_machines.every(m => m && typeof m.id === 'string' && m.data && typeof m.data === 'object')) {
+        throw new Error('The backup contains an invalid machine record. Existing data has not been changed.');
+      }
+      if (!confirm('Restore this backup? This will replace all planner data currently saved in this browser.')) return;
+      if (!db) throw new Error('Planner database is not ready. Reload the page and try again.');
+
+      const ids = data.vrp_machines.map(m => m.id);
+      const restoredActiveId = ids.includes(data.vrp_active_machine) ? data.vrp_active_machine : ids[0];
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, 'readwrite');
+        const store = tx.objectStore(DB_STORE);
+        store.put(data.vrp_machines, 'vrp_machines');
+        store.put(restoredActiveId, 'vrp_active_machine');
+        store.put(data.vrp, 'vrp');
+        store.put(data.vrp_catalog, 'vrp_catalog');
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error || new Error('Restore failed while saving to IndexedDB.'));
+        tx.onabort = () => reject(tx.error || new Error('Restore was cancelled by the database.'));
+      });
+      alert('Backup restored successfully. The planner will now reload.');
+      location.reload();
+    }
+
     function dbSaveLibrary() {
       // Queue writes so rapid edits cannot overwrite a newer machine-library snapshot.
       const stripCatalog = data => {
@@ -929,7 +977,7 @@
     const paper = () => P[S.paper] ? S.paper : 'A4 landscape';
     const cl = (a, b, x) => Math.max(a, Math.min(b, x));
     function fit() {
-      const [W, H] = P[paper()], n = S.trays.length, m = Math.max(...S.trays.map(t => t.slots)), hh = cl(6, 11, H * .1), lw = cl(5, 8, W * .045), cw = (W - lw - 1 - (m - 1)) / m, ch = cl(8, 40, (H - hh - 4 - n) / n), fs = cl(5.5, 9, cw * .3), qf = cl(9, 22, cw * .45), im = cl(5, 30, Math.min(ch - (3.1 * fs / 2.835) - 6, cw - .45 * qf - 1.5)), r = x => x.toFixed(1);
+      const [W, H] = P[paper()], n = S.trays.length, m = Math.max(...S.trays.map(t => t.slots)), hh = cl(6, 11, H * .1), lw = cl(5, 8, W * .045), cw = (W - lw - 1 - (m - 1)) / m, ch = cl(8, 40, (H - hh - 4 - n) / n), fs = cl(5.5, 9, cw * .3), qf = cl(9, 22, cw * .45), im = cl(5, 30, Math.min(ch - 1.31 * fs - 1.5, cw - .45 * qf - 1.5)), r = x => x.toFixed(1);
       let msg = im < 10 ? `Heads up: on ${paper()}, photos print only about ${Math.round(im)} mm wide. Use a bigger paper size or fewer trays/slots.` : `Fits on one ${paper()} page; photos print about ${Math.round(im)} mm wide.`;
       if (n * (ch + 1) + hh + 4 > H + .5) msg = 'Too many trays to fit on one page of ' + paper() + '. Use a bigger paper size.';
       return {css: `--hh:${r(hh)}mm;--lw:${r(lw)}mm;--cw:${r(cw)}mm;--ch:${r(ch)}mm;--im:${r(im)}mm;--fs:${r(fs)}pt;--qf:${r(qf)}pt`, msg}
@@ -971,7 +1019,9 @@
     const run = p => p.then(done).catch(e => done('Import failed: ' + e.message));
     function vM() {
       const tot = S.trays.reduce((a, t) => a + t.slots, 0); return `<div class="card"><h2>1. Machine setup</h2>
-<div class="machine-library"><label>Saved machine templates<select data-a="machine-select">${machines.map(m => `<option value="${esc(m.id)}"${m.id === activeMachineId ? ' selected' : ''}>${esc(m.name || 'Unnamed machine')}</option>`).join('')}</select></label><div class="row"><button class="pri" data-a="newmachine">Save as new machine</button><button data-a="savemachine">Save current machine</button><button class="sec" data-a="deletemachine"${machines.length <= 1 ? ' disabled' : ''}>Delete machine</button></div><p class="mu">Changes are saved automatically in this browser using IndexedDB (which supports substantially more data than localStorage). Select a saved machine to return to it later.</p></div>
+<div class="machine-library"><label>Saved machine templates<select data-a="machine-select">${machines.map(m => `<option value="${esc(m.id)}"${m.id === activeMachineId ? ' selected' : ''}>${esc(m.name || 'Unnamed machine')}</option>`).join('')}</select></label><div class="row"><button class="pri" data-a="newmachine">Save as new machine</button><button data-a="savemachine">Save current machine</button><button class="sec" data-a="deletemachine"${machines.length <= 1 ? ' disabled' : ''}>Delete machine</button></div><p class="mu">Changes are saved automatically in this browser using IndexedDB (which supports substantially more data than localStorage). Select a saved machine to return to it later.</p>
+<div class="row"><button class="pri" data-a="exportbackup">Download full backup (JSON)</button><label>Restore backup (JSON)<input type="file" accept=".json,application/json" data-a="backupfile"></label></div>
+<p class="mu">The backup includes all machine templates, the active machine, product master, categories, planograms and saved settings.</p></div>
 <label>Machine name<input data-a="name" value="${esc(S.name)}"></label>
 <label>Number of trays<input type="number" min="1" max="20" value="${S.trays.length}" data-a="ntrays"></label>
 ${S.trays.map((r, i) => `<div class="tray-setup"><h3>Tray ${i + 1} <small>(${r.slots} slots)</small></h3><label>Number of slots<input type="number" min="1" max="20" value="${r.slots}" data-a="slots" data-t="${i}"></label><div class="slot-cap-list">${Array.from({length: r.slots}, (_, j) => `<label>Slot ${slotNo(i, j)} capacity<input type="number" min="1" max="99" value="${capAt(i, j)}" data-a="slotcap" data-t="${i}" data-s="${j}"></label>`).join('')}</div></div>`).join('')}
@@ -1054,6 +1104,7 @@ ${ids.length && S.tot !== false ? `<table class="tot"><thead><tr><th colspan="3"
         if (!ed.pid) {alert('Pick a product first.'); return } const q = num($('#qty').value, 0, capAt(ed.t, ed.s));
         if (a == 'save') S.plan[ed.t + '-' + ed.s] = {pid: ed.pid, qty: q}; else for (let s = 0; s < S.trays[ed.t].slots; s++)S.plan[ed.t + '-' + s] = {pid: ed.pid, qty: Math.min(q, capAt(ed.t, s))}; ed = null; save(); render()
       }
+      else if (a == 'exportbackup') {exportBackup().then(message => alert(message)).catch(error => alert('Backup failed: ' + (error.message || error)))}
       else if (a == 'print') {try {window.print()} catch (x) {alert('Printing is not available here. Open the page in its own tab.')} }
     });
     document.addEventListener('input', e => {if (e.target.id == 'qty' && ed) ed.qty = +e.target.value || 0});
@@ -1063,6 +1114,11 @@ ${ids.length && S.tot !== false ? `<table class="tot"><thead><tr><th colspan="3"
       else if (a == 'name') {S.name = el.value; save(); const opt = $('[data-a="machine-select"] option:checked'); if (opt) opt.textContent = el.value || 'Unnamed machine'}
       else if (a == 'paper') {S.paper = el.value; save(); render()}
       else if (a == 'impfile' && el.files[0]) {const f = el.files[0]; if (/\.xlsx?$/i.test(f.name)) {if (!window.XLSX) {$('#imsg').textContent = 'Excel reader unavailable. Save the workbook as CSV and import it.'} else {f.arrayBuffer().then(buf => {const wb = XLSX.read(buf, {type: 'array'}), ws = wb.Sheets[wb.SheetNames[0]], rows = XLSX.utils.sheet_to_json(ws, {header: 1, defval: ''}); showImportPreview(rowsToItems(rows))}).catch(x => $('#imsg').textContent = 'Import error: ' + x.message)} } else {f.text().then(t => {if (/\.json$/i.test(f.name)) {const data = JSON.parse(t); showImportPreview((Array.isArray(data) ? data : []).map(x => ({...x, mrp: x.mrp ?? '', image: x.image || x.img || ''})));} else showImportPreview(rowsToItems(parseTable(t)))}).catch(x => $('#imsg').textContent = 'Import error: ' + x.message)} }
+      else if (a == 'backupfile' && el.files[0]) {
+        const file = el.files[0];
+        restoreBackupFile(file).catch(error => alert('Restore failed: ' + (error.message || error)));
+        el.value = '';
+      }
       else if (a == 'impimgs' && el.files.length) {$('#imsg').textContent = 'Matching photos…'; run(matchImgs([...el.files]))}
       else if (a == 'selectall') {document.querySelectorAll('.prod-select').forEach(x => x.checked = el.checked)}
       else if (a == 'totals') {S.tot = el.checked; save(); render()}
