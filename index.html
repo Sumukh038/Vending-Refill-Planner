@@ -584,17 +584,29 @@
         align-items: center;
         justify-content: center;
         gap: .8mm;
-        flex: none;
+        flex: 0 0 var(--im);
         width: 100%;
+        min-width: 0;
         min-height: 0;
-        height: var(--im)
+        height: var(--im);
+        max-height: var(--im);
+        overflow: hidden
       }
 
       .slot img,
       .slot .ph {
-        width: var(--im);
-        height: var(--im);
-        flex: none
+        display: block;
+        box-sizing: border-box;
+        width: var(--im) !important;
+        height: var(--im) !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
+        max-width: var(--im) !important;
+        max-height: var(--im) !important;
+        flex: 0 0 var(--im);
+        object-fit: contain;
+        object-position: center;
+        overflow: hidden
       }
 
       .pn {
@@ -1124,7 +1136,23 @@ ${ids.length && S.tot !== false ? `<table class="tot"><thead><tr><th colspan="3"
         if (a == 'save') S.plan[ed.t + '-' + ed.s] = {pid: ed.pid, qty: q}; else for (let s = 0; s < S.trays[ed.t].slots; s++)S.plan[ed.t + '-' + s] = {pid: ed.pid, qty: Math.min(q, capAt(ed.t, s))}; ed = null; save(); render()
       }
       else if (a == 'exportbackup') {exportBackup().then(message => alert(message)).catch(error => alert('Backup failed: ' + (error.message || error)))}
-      else if (a == 'print') {try {window.print()} catch (x) {alert('Printing is not available here. Open the page in its own tab.')} }
+      else if (a == 'print') {
+        try {
+          // Wait until every product photo in the printable sheet is decoded.
+          const printableImages = [...document.querySelectorAll('.sheet img')];
+          Promise.all(printableImages.map(image => {
+            if (image.complete && image.naturalWidth > 0) return Promise.resolve();
+            if (typeof image.decode === 'function') return image.decode().catch(() => undefined);
+            return new Promise(resolve => {
+              image.addEventListener('load', resolve, {once: true});
+              image.addEventListener('error', resolve, {once: true});
+              setTimeout(resolve, 5000);
+            });
+          })).then(() => window.print());
+        } catch (x) {
+          alert('Printing is not available here. Open the page in its own tab.');
+        }
+      }
     });
     document.addEventListener('input', e => {if (e.target.id == 'qty' && ed) ed.qty = +e.target.value || 0});
     document.addEventListener('change', e => {
